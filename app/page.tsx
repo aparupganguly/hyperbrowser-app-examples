@@ -1,6 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
 import Image from 'next/image';
 import { UploadResponse, PricingResponse, PricingResult, PromptResult, SummaryResponse, AudioTranscription, AnalysisResponse } from '@/lib/types';
 
@@ -10,6 +16,7 @@ export default function Home() {
   const [frames, setFrames] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [hasAudio, setHasAudio] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioTranscription, setAudioTranscription] = useState<AudioTranscription | null>(null);
   const [pricingResults, setPricingResults] = useState<PricingResult[] | null>(null);
   const [promptResult, setPromptResult] = useState<PromptResult | null>(null);
@@ -43,6 +50,9 @@ export default function Home() {
       if (dataRes.ok) {
         const runData = await dataRes.json();
         setHasAudio(!!runData.audio_path);
+        if (runData.audio_path) {
+          setAudioUrl(`/runs/${data.run_id}/audio.mp3`);
+        }
       }
     } catch (error) {
       console.error('Upload failed:', error);
@@ -50,6 +60,79 @@ export default function Home() {
       setUploading(false);
     }
   };
+
+  // Ensure audio URL is set when we know the run has audio
+  useEffect(() => {
+    if (runId && hasAudio) {
+      setAudioUrl(`/runs/${runId}/audio.mp3`);
+    }
+  }, [runId, hasAudio]);
+
+  function Waveform({ src }: { src: string }) {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    useEffect(() => {
+      let isCancelled = false;
+      const draw = async () => {
+        try {
+          const res = await fetch(src);
+          const arrayBuffer = await res.arrayBuffer();
+          const AudioCtx: typeof AudioContext = window.AudioContext || window.webkitAudioContext!;
+          const audioCtx = new AudioCtx();
+          const audioBuffer: AudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+          if (isCancelled) { audioCtx.close(); return; }
+
+          const canvas = canvasRef.current;
+          if (!canvas) { audioCtx.close(); return; }
+          const width = canvas.clientWidth || 600;
+          const height = canvas.clientHeight || 48;
+          const dpr = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(width * dpr);
+          canvas.height = Math.floor(height * dpr);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { audioCtx.close(); return; }
+          ctx.resetTransform();
+          ctx.scale(dpr, dpr);
+          ctx.clearRect(0, 0, width, height);
+          ctx.fillStyle = '#f5f5f5';
+          ctx.fillRect(0, 0, width, height);
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1;
+
+          const channelData = audioBuffer.getChannelData(0);
+          const samples = Math.max(1, Math.min(width, 2000));
+          const blockSize = Math.max(1, Math.floor(channelData.length / samples));
+
+          ctx.beginPath();
+          for (let i = 0; i < samples; i++) {
+            const start = i * blockSize;
+            let min = 1.0;
+            let max = -1.0;
+            for (let j = 0; j < blockSize; j++) {
+              const val = channelData[start + j] || 0;
+              if (val < min) min = val;
+              if (val > max) max = val;
+            }
+            const x = (i / samples) * width;
+            const yTop = (1 - max) * 0.5 * height;
+            const yBot = (1 - min) * 0.5 * height;
+            ctx.moveTo(x, yTop);
+            ctx.lineTo(x, yBot);
+          }
+          ctx.stroke();
+          audioCtx.close();
+        } catch {
+          // ignore waveform errors silently
+        }
+      };
+      draw();
+      return () => { isCancelled = true; };
+    }, [src]);
+
+    return (
+      <canvas ref={canvasRef} className="w-full h-12 border border-gray-300" />
+    );
+  }
 
   const handleCompleteAnalysis = async () => {
     if (!runId || frames.length === 0) return;
@@ -341,6 +424,12 @@ export default function Home() {
                           )}
                         </div>
                       </div>
+                      {audioUrl && (
+                        <div>
+                          <p className="text-sm font-medium text-gray-600 mb-2">Waveform</p>
+                          <Waveform src={audioUrl} />
+                        </div>
+                      )}
                       {audioTranscription.has_speech && audioTranscription.text && (
                         <div>
                           <p className="text-sm font-medium text-gray-600 mb-2">Transcription</p>

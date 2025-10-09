@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { createHyperbrowserClient, getPlatformPricing, VideoComplexityFactors } from '@/lib/hyperbrowser';
-import { getRunDir, readJSON, saveJSON } from '@/lib/utils';
+import { getRunDir, readJSON, saveJSON, isValidRunId } from '@/lib/utils';
 import { PricingResponse, PricingResult, RunData, ErrorResponse } from '@/lib/types';
 import { getVideoDuration } from '@/lib/ffmpeg';
 
 export async function POST(request: NextRequest): Promise<NextResponse<PricingResponse | ErrorResponse>> {
   try {
     const { run_id } = await request.json();
+    if (!isValidRunId(run_id)) {
+      return NextResponse.json(
+        { error: 'Invalid run_id' },
+        { status: 400 }
+      );
+    }
 
     if (!run_id) {
       return NextResponse.json(

@@ -3,12 +3,19 @@ import { openai } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 import path from 'path';
 import { readFile } from 'fs/promises';
-import { getRunDir, readJSON, saveJSON } from '@/lib/utils';
+import { getRunDir, readJSON, saveJSON, isValidRunId } from '@/lib/utils';
+import { z } from 'zod';
 import { RunData } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {
     const { run_id, frames } = await request.json();
+    if (!isValidRunId(run_id) || !frames || !Array.isArray(frames)) {
+      return new Response(
+        JSON.stringify({ error: 'run_id and frames are required' }),
+        { status: 400 }
+      );
+    }
 
     if (!run_id || !frames || !Array.isArray(frames)) {
       return new Response(
@@ -101,8 +108,18 @@ Be detailed and specific. The prompt should capture the essence of what's shown 
           if (cleanedText.startsWith('```')) {
             cleanedText = cleanedText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
           }
-          
-          const parsed = JSON.parse(cleanedText);
+          const PromptSchema = z.object({
+            prompt: z.string(),
+            style_tags: z.array(z.string()).min(1),
+            confidence: z.number().min(0).max(1),
+            audio_context: z.string().optional()
+          });
+          const parsedJson = JSON.parse(cleanedText);
+          const parsedRes = PromptSchema.safeParse(parsedJson);
+          if (!parsedRes.success) {
+            throw new Error('Invalid JSON schema from model');
+          }
+          const parsed = parsedRes.data;
           runData.prompt_result = parsed;
           await saveJSON(dataPath, runData);
         } catch (error) {

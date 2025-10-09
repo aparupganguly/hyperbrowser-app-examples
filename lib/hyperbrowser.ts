@@ -60,16 +60,38 @@ export async function getPlatformPricing(
       console.log(`\n🔍 Scraping pricing data from ${platform.name}...`);
       console.log(`URL: ${platform.pricingUrl}`);
       
-      // Scrape the pricing page with rendered JavaScript
-      const result = await client.scrape.startAndWait({ 
-        url: platform.pricingUrl
-      });
+      // Scrape the pricing page with rendered JavaScript (with retry and timeout)
+      const scrapeWithRetry = async (): Promise<{ data: unknown }> => {
+        const maxAttempts = 3;
+        let lastError: unknown = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T> => {
+              return await new Promise<T>((resolve, reject) => {
+                const t = setTimeout(() => reject(new Error('scrape timeout')), ms);
+                p.then((v) => { clearTimeout(t); resolve(v); })
+                 .catch((e) => { clearTimeout(t); reject(e); });
+              });
+            };
+            const res = await withTimeout(client.scrape.startAndWait({ url: platform.pricingUrl }) as Promise<{ data: unknown }>, 20000);
+            return res;
+          } catch (err) {
+            lastError = err;
+            if (attempt === maxAttempts) break;
+            await new Promise(r => setTimeout(r, 500 * attempt));
+          }
+        }
+        throw lastError;
+      };
+
+      const result = await scrapeWithRetry();
       
       const scrapedData = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
       console.log(`✓ Scraped ${scrapedData.length} characters from ${platform.name}`);
       
       // Save scraped content snippet for debugging
-      const snippet = scrapedData.substring(0, 500).replace(/\n/g, ' ');
+      // Avoid logging full content blobs in production; keep short
+      const snippet = scrapedData.substring(0, 200).replace(/\n/g, ' ');
       console.log(`Content preview: ${snippet}...`);
       
       // Extract pricing information from scraped content

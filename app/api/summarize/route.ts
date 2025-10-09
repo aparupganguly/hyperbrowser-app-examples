@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
-import { getRunDir, readJSON, saveJSON } from '@/lib/utils';
+import { getRunDir, readJSON, saveJSON, isValidRunId } from '@/lib/utils';
 import { SummaryResponse, RunData, ErrorResponse } from '@/lib/types';
 
 export async function POST(request: NextRequest): Promise<NextResponse<SummaryResponse | ErrorResponse>> {
   try {
     const { run_id } = await request.json();
+    if (!isValidRunId(run_id)) {
+      return NextResponse.json(
+        { error: 'Invalid run_id' },
+        { status: 400 }
+      );
+    }
 
     if (!run_id) {
       return NextResponse.json(

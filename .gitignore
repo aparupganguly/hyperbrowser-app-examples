@@ -1,3 +1,5 @@
+# Local run artifacts (videos, audio, frames, metadata)
+public/runs/
 # Dependencies
 /node_modules
 /.pnp

@@ -4,6 +4,7 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import { extractKeyframes, extractAudio, hasAudioStream } from '@/lib/ffmpeg';
 import { getRunDir, getRunPublicPath, saveJSON, ensureDir } from '@/lib/utils';
+import { z } from 'zod';
 import { UploadResponse, RunData, ErrorResponse } from '@/lib/types';
 
 export async function POST(request: NextRequest): Promise<NextResponse<UploadResponse | ErrorResponse>> {
@@ -22,7 +23,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<UploadRes
     const runDir = getRunDir(runId);
     const videoPath = path.join(runDir, 'video.mp4');
 
+    // Basic type/size guards (50MB limit mirrored server-side)
+    const contentType = file.type || '';
+    const allowed = ['video/mp4', 'video/quicktime', 'video/webm'];
+    if (!allowed.includes(contentType)) {
+      return NextResponse.json(
+        { error: 'Unsupported file type' },
+        { status: 415 }
+      );
+    }
+
     const bytes = await file.arrayBuffer();
+    if (bytes.byteLength > 50 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'File too large (max 50MB)' },
+        { status: 413 }
+      );
+    }
     const buffer = Buffer.from(bytes);
 
     await ensureDir(runDir);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
-import { readFile } from 'fs/promises';
-import { getRunDir, readJSON, saveJSON } from '@/lib/utils';
+import { createReadStream } from 'fs';
+import { getRunDir, readJSON, saveJSON, isValidRunId } from '@/lib/utils';
 import { RunData, AudioTranscription, ErrorResponse } from '@/lib/types';
 import OpenAI from 'openai';
 
@@ -12,6 +12,12 @@ const openai = new OpenAI({
 export async function POST(request: NextRequest): Promise<NextResponse<AudioTranscription | ErrorResponse>> {
   try {
     const { run_id } = await request.json();
+    if (!isValidRunId(run_id)) {
+      return NextResponse.json(
+        { error: 'Invalid run_id' },
+        { status: 400 }
+      );
+    }
 
     if (!run_id) {
       return NextResponse.json(
@@ -31,12 +37,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<AudioTran
       );
     }
 
-    const audioFile = await readFile(runData.audio_path);
-    const audioBlob = new Blob([audioFile], { type: 'audio/mp3' });
-    const file = new File([audioBlob], 'audio.mp3', { type: 'audio/mp3' });
+    const fileStream = createReadStream(runData.audio_path);
 
     const transcription = await openai.audio.transcriptions.create({
-      file: file,
+      file: fileStream,
       model: 'whisper-1',
       response_format: 'verbose_json',
     });

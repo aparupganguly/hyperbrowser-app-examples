@@ -11,6 +11,7 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "Sora Video Analyzer - Find Similar Videos + Decode Prompts",
   description: "Upload an AI-generated video to find similar content and infer the generation prompt using visual search and GPT-4o",
+  icons: { icon: '/icon.svg' },
 };
 
 export default function RootLayout({

@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
-import { getRunDir, readJSON, saveJSON } from '@/lib/utils';
-import { RunData, ErrorResponse } from '@/lib/types';
+import { getRunDir, readJSON, saveJSON, isValidRunId } from '@/lib/utils';
+import { RunData, ErrorResponse, AnalysisResponse } from '@/lib/types';
 import { readFile } from 'fs/promises';
+import { createReadStream } from 'fs';
 import OpenAI from 'openai';
-import { openai as aiSdkOpenai } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+// Removed unused ai-sdk imports
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function POST(request: NextRequest): Promise<NextResponse<any | ErrorResponse>> {
+export async function POST(request: NextRequest): Promise<NextResponse<AnalysisResponse | ErrorResponse>> {
   try {
     const { run_id, frames } = await request.json();
-
-    if (!run_id || !frames || !Array.isArray(frames)) {
+    if (!isValidRunId(run_id) || !frames || !Array.isArray(frames)) {
       return NextResponse.json(
         { error: 'run_id and frames are required' },
         { status: 400 }
@@ -33,7 +32,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<any | Err
       has_pricing_results: !!runData.pricing_results,
     });
 
-    const result: any = {
+    const result: AnalysisResponse = {
       run_id,
       has_audio: !!runData.audio_path,
       audio_transcription: runData.audio_transcription || null,
@@ -45,12 +44,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<any | Err
     // Step 1: Transcribe audio if available
     if (runData.audio_path && !runData.audio_transcription) {
       try {
-        const audioFile = await readFile(runData.audio_path);
-        const audioBlob = new Blob([new Uint8Array(audioFile)], { type: 'audio/mp3' });
-        const file = new File([audioBlob], 'audio.mp3', { type: 'audio/mp3' });
+        const fileStream = createReadStream(runData.audio_path);
 
         const transcription = await openai.audio.transcriptions.create({
-          file: file,
+          file: fileStream,
           model: 'whisper-1',
           response_format: 'verbose_json',
         });
